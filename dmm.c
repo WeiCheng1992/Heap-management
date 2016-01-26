@@ -11,8 +11,8 @@
 #define IS_ALLOC(x)  (((x) -> size) & 1)
 #define GET_SIZE(x) (((x) -> size) & (~7))
 #define SET_SIZE(x,a) ( (x) -> size =  ( (a) & (~7) ) | ( (x) -> size & 0x7) )
-#define FREE(x) ((x) -> size & 0)
-#define ALLOC(x) ((x) -> size | 1)
+#define FREE(x) ((x) -> size &=  ~1 )
+#define ALLOC(x) ((x) -> size |= 1)
 #define MOVE(x,n) ((void*)(x) +(n))
 
 
@@ -48,7 +48,7 @@ static metadata_t* freelist = NULL;
 
 static size_t total_size = 0;
 
-static void* brk =NULL;
+static void* mbrk =NULL;
 
 static size_t current = 0;
 static bool is_init = false;
@@ -62,20 +62,29 @@ void add_to_list(metadata_t * cur){
     SET_SIZE(t,GET_SIZE(cur));
     FREE(t);
     
-    metadata_t * a = freelist;
-    freelist -> pre = cur;
-    freelist = cur ;
-    freelist -> next =a;
+    if(freelist == NULL){
+        freelist = cur;
+        freelist -> prev = NULL;
+        freelist -> next = NULL;
+    }else{
+        metadata_t * a = freelist;
+        freelist -> prev = cur;
+        freelist = cur ;
+        freelist -> next =a;
+        freelist -> prev = NULL;
+    }
 }
 void delete_from_list(metadata_t * cur){
     if(cur == NULL)
         return;
         
     if(cur -> prev == NULL && cur-> next == NULL)
-        freelist == NULL;
+        freelist = NULL;
         
-    else if(cur ->prev == NULL)
+    else if(cur ->prev == NULL){
         freelist = cur->next;
+        freelist ->prev = NULL;
+    }
     else if(cur -> next == NULL)
         cur->prev ->next =NULL;
     else{
@@ -95,8 +104,8 @@ bool extend_memory(size_t size){
     if(s + current > total_size )
         return false;
     
-    void* ans = brk;
-    brk = brk + s;
+    void* ans = mbrk;
+    mbrk = mbrk + s;
     
     
     metadata_t* tmp = (void *) ans;
@@ -108,7 +117,7 @@ bool extend_memory(size_t size){
     return true;
 }
 
-metadata* split(metadata_t * cur,size_t size){
+metadata_t* split(metadata_t * cur,size_t size){
     if(cur == NULL || GET_SIZE(cur) <= MINSIZE +size )
         return NULL;
         
@@ -131,7 +140,7 @@ void *find_fit(size_t size){
     metadata_t* cur = freelist;
     void * ans = NULL;
     while(cur){
-        if(GET_SIZE(cur) >= size + OVERHEAD)){
+        if(GET_SIZE(cur) >= size + OVERHEAD){
             
             ans = (void *)cur;
             delete_from_list(cur);
@@ -180,19 +189,22 @@ metadata_t* coalescing(metadata_t* cur){
     size_t size = GET_SIZE(cur);
     
     /* prev is free*/
-    if(!ALLOC(prev_tail)){
+    if(!IS_ALLOC(prev_tail)){
         size+= GET_SIZE(prev_tail);
-        ans = (metadata_t *)MOVE(cur,-GETSIZE(prev_tail));
+        ans = (metadata_t *)MOVE(cur,-GET_SIZE(prev_tail));
         delete_from_list(ans);
     }
     
     
     /*not last block*/
-    if(brk + current != ((void*)tail) + sizeof(footer_t)){
+    if(mbrk + current != ((void*)tail) + sizeof(footer_t)){
+        //printf("jinlaile\n");
         metadata_t* next_head = (metadata_t*)MOVE(cur,GET_SIZE(cur));
-        if(!ALLOC(next_head)){
+        if(!IS_ALLOC(next_head)){
+            //printf("jinqule\n");
             size += GET_SIZE(next_head);
             delete_from_list(next_head);
+            
         }
     }
     SET_SIZE(ans,size);
@@ -229,23 +241,23 @@ bool dmalloc_init() {
     is_init = true;
 	size_t max_bytes = ALIGN(MAX_HEAP_SIZE);
 	total_size = max_bytes;
-    brk = (metadata_t*) sbrk(max_bytes); // returns heap_region, which is initialized to freelist
+    mbrk = (metadata_t*) sbrk(max_bytes); // returns heap_region, which is initialized to freelist
     
 	/* Q: Why casting is used? i.e., why (void*)-1? */
-	if (brk == (void *)-1)
+	if (mbrk == (void *)-1)
 		return false;
 
     current = EXTEND_UNIT;
-    (*(size_t *)brk) = 1;
+    (*(size_t *)mbrk) = 1;
     
-    freelist = (metadata_t *)(tmp + sizeof(size_t));
+    freelist = (metadata_t *)(mbrk + sizeof(size_t));
     freelist ->next = NULL;
     freelist -> prev = NULL;
     SET_SIZE(freelist, EXTEND_UNIT - sizeof(size_t));
     FREE(freelist);
 
     
-    footer_t* t = (footer_t *)MOVE(freelist,EXTEND_UNIT-sizeof(footer_t));
+    footer_t* t = (footer_t *)MOVE(freelist,GET_SIZE(freelist)-sizeof(footer_t));
     SET_SIZE(t,GET_SIZE(freelist));
     FREE(t);
 	return true;
@@ -256,7 +268,9 @@ void print_freelist() {
 	metadata_t *freelist_head = freelist;
 	while(freelist_head != NULL) {
 		DEBUG("\tFreelist Size:%zd, Head:%p, Prev:%p, Next:%p\t",freelist_head->size,freelist_head,freelist_head->prev,freelist_head->next);
+		//printf("%d\n", freelist_head->size);
 		freelist_head = freelist_head->next;
+		
 	}
 	DEBUG("\n");
 }

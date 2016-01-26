@@ -2,7 +2,7 @@
 #CC = g++
 CC = gcc
 EXECUTABLES = test_basic test_coalesce test_stress1 test_stress2
-CFLAGS = -I. -Wall -lm -DEBUGFLAG
+CFLAGS = -I. -Wall -lm #-DNDEBUG
 #Disable the -DNDEBUG flag for the printing the freelist
 #CFLAGS = -Wall -I.
 PTFLAG = -O2
@@ -27,10 +27,10 @@ test_basic: test_basic.c dmm.o
 test_coalesce: test_coalesce.c dmm.o
 	$(CC) $(CFLAGS) -o test_coalesce test_coalesce.c dmm.o
 test_stress1: test_stress1.c dmm.o
-	$(CC) $(CFLAGS) -o test_stress1 test_stress1.c dmm.o
+	$(CC) $(CFLAGS) -g -o test_stress1 test_stress1.c dmm.o
 test_stress2: test_stress2.c dmm.o
-	$(CC) $(CFLAGS) -o test_stress2 test_stress2.c dmm.o
+	$(CC) $(CFLAGS) -g -o test_stress2 test_stress2.c dmm.o
 dmm.o: dmm.c
-	$(CC) $(CFLAGS) -c dmm.c 
+	$(CC) $(CFLAGS) -g -c dmm.c 
 clean:
 	rm -f *.o ${EXECUTABLES} a.out
