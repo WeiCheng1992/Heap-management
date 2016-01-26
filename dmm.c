@@ -141,7 +141,7 @@ void *find_fit(size_t size){
             
             footer_t* t = (footer_t*)MOVE(cur, GET_SIZE(cur) - sizeof(footer_t));
             ALLOC(t);
-            ans += sizeof(metadata_t);
+            ans += sizeof(footer_t);
             break;
         }
         
@@ -170,10 +170,50 @@ void* dmalloc(size_t numbytes) {
 	
 	return ans;
 }
+metadata_t* coalescing(metadata_t* cur){
+    footer_t* tail = (footer_t*)MOVE(cur,GET_SIZE(cur)-sizeof(footer_t));
+    
+    footer_t* prev_tail = (footer_t *) MOVE(cur, -sizeof(footer_t));
+    
+    metadata_t * ans= cur;
+    
+    size_t size = GET_SIZE(cur);
+    
+    /* prev is free*/
+    if(!ALLOC(prev_tail)){
+        size+= GET_SIZE(prev_tail);
+        ans = (metadata_t *)MOVE(cur,-GETSIZE(prev_tail));
+        delete_from_list(ans);
+    }
+    
+    
+    /*not last block*/
+    if(brk + current != ((void*)tail) + sizeof(footer_t)){
+        metadata_t* next_head = (metadata_t*)MOVE(cur,GET_SIZE(cur));
+        if(!ALLOC(next_head)){
+            size += GET_SIZE(next_head);
+            delete_from_list(next_head);
+        }
+    }
+    SET_SIZE(ans,size);
+    footer_t * t = (footer_t *)MOVE(ans,GET_SIZE(ans) - sizeof(footer_t));
+    SET_SIZE(t,size);
+    
+    
+    return ans;
+}
 
 void dfree(void* ptr) {
 
 	/* Your free and coalescing code goes here */
+	metadata_t * cur = (metadata_t *)MOVE(ptr, -sizeof(footer_t));
+	FREE(cur);
+	footer_t * t = (footer_t *)MOVE(cur,GET_SIZE(cur)-sizeof(footer_t));
+	FREE(t);
+	
+	add_to_list(coalescing(cur));
+	
+	
 }
 
 
