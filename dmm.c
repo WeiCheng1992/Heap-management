@@ -7,6 +7,21 @@
  * and OHallaron book (chapter 9).
  */
 
+
+#define IS_ALLOC(x)  (((x) -> size) & 1)
+#define GET_SIZE(x) (((x) -> size) & (~7))
+#define SET_SIZE(x,a) ( (x) -> size =  ( (a) & (~7) ) | ( (x) -> size & 0x7) )
+#define FREE(x) ((x) -> size & 0)
+#define ALLOC(x) ((x) -> size | 1)
+#define MOVE(x,n) ((void*)(x) +(n))
+
+
+#define EXTEND_UNIT (MAX_HEAP_SIZE)
+
+#define OVERHEAD (2*sizeof(footer_t))
+
+#define MINSIZE (sizeof(metadata_t) + sizeof(footer_t))
+
 typedef struct metadata {
        /* size_t is the return type of the sizeof operator. Since the size of
  	* an object depends on the architecture and its implementation, size_t 
@@ -20,29 +35,147 @@ typedef struct metadata {
 	struct metadata* prev; //What's the use of prev pointer?
 } metadata_t;
 
+typedef struct footer{
+    size_t size;
+}footer_t;
+
+
 /* freelist maintains all the blocks which are not in use; freelist is kept
  * always sorted to improve the efficiency of coalescing 
  */
 
 static metadata_t* freelist = NULL;
 
-void* dmalloc(size_t numbytes) {
-	if(freelist == NULL) { 			//Initialize through sbrk call first time
-		if(!dmalloc_init())
-			return NULL;
-	}
+static size_t total_size = 0;
 
+static void* brk =NULL;
+
+static size_t current = 0;
+static bool is_init = false;
+
+void add_to_list(metadata_t * cur){
+    if(cur == NULL)
+        return ;
+        
+    FREE(cur);    
+    footer_t* t = (footer_t *)MOVE(cur,GET_SIZE(cur)-sizeof(footer_t));
+    SET_SIZE(t,GET_SIZE(cur));
+    FREE(t);
+    
+    metadata_t * a = freelist;
+    freelist -> pre = cur;
+    freelist = cur ;
+    freelist -> next =a;
+}
+void delete_from_list(metadata_t * cur){
+    if(cur == NULL)
+        return;
+        
+    if(cur -> prev == NULL && cur-> next == NULL)
+        freelist == NULL;
+        
+    else if(cur ->prev == NULL)
+        freelist = cur->next;
+    else if(cur -> next == NULL)
+        cur->prev ->next =NULL;
+    else{
+        
+        cur->prev ->next = cur ->next;
+        cur->next-> prev = cur -> prev;
+    }
+}
+
+bool extend_memory(size_t size){
+    size_t s;
+    
+    if(size % EXTEND_UNIT == 0)
+        s = size;
+    else s = (size / EXTEND_UNIT + 1) * EXTEND_UNIT;
+        
+    if(s + current > total_size )
+        return false;
+    
+    void* ans = brk;
+    brk = brk + s;
+    
+    
+    metadata_t* tmp = (void *) ans;
+    SET_SIZE(tmp,s);    
+    tmp ->prev =NULL;
+    
+    add_to_list(tmp);
+    
+    return true;
+}
+
+metadata* split(metadata_t * cur,size_t size){
+    if(cur == NULL || GET_SIZE(cur) <= MINSIZE +size )
+        return NULL;
+        
+    size_t second_size = GET_SIZE(cur) - size;
+    
+    SET_SIZE(cur, size );
+    footer_t* t = (footer_t*)MOVE(cur, GET_SIZE(cur) - sizeof(footer_t));   
+    SET_SIZE(t , size);
+    
+    metadata_t * second = (metadata_t *)MOVE(t,sizeof(footer_t));
+    SET_SIZE(second, second_size);
+    
+    t = (footer_t*)MOVE(second, GET_SIZE(second) - sizeof(footer_t));      
+    SET_SIZE(t,second_size);
+    
+    return second;
+}
+
+void *find_fit(size_t size){
+    metadata_t* cur = freelist;
+    void * ans = NULL;
+    while(cur){
+        if(GET_SIZE(cur) >= size + OVERHEAD)){
+            
+            ans = (void *)cur;
+            delete_from_list(cur);
+            add_to_list(split(cur,size + OVERHEAD));
+            ALLOC(cur);
+            
+            
+            footer_t* t = (footer_t*)MOVE(cur, GET_SIZE(cur) - sizeof(footer_t));
+            ALLOC(t);
+            ans += sizeof(metadata_t);
+            break;
+        }
+        
+        cur = cur -> next;
+    }
+    return ans;
+}
+
+
+void* dmalloc(size_t numbytes) {
+
+    if(!is_init){
+        dmalloc_init();
+    }
+    
 	assert(numbytes > 0);
 
-	/* Your code goes here */
+    size_t size = ALIGN(numbytes);
+    void * ans = find_fit(size);
+    
+	if(ans == NULL){
+	    if(!extend_memory(size))
+	        return NULL;	        
+	     ans = find_fit(size);
+	}
 	
-	return NULL;
+	return ans;
 }
 
 void dfree(void* ptr) {
 
 	/* Your free and coalescing code goes here */
 }
+
 
 bool dmalloc_init() {
 
@@ -53,15 +186,28 @@ bool dmalloc_init() {
  	* Note: We provide the code for 2. Using 1 will help you to tackle the
  	* corner cases succinctly.
  	*/
-
+    is_init = true;
 	size_t max_bytes = ALIGN(MAX_HEAP_SIZE);
-	freelist = (metadata_t*) sbrk(max_bytes); // returns heap_region, which is initialized to freelist
+	total_size = max_bytes;
+    brk = (metadata_t*) sbrk(max_bytes); // returns heap_region, which is initialized to freelist
+    
 	/* Q: Why casting is used? i.e., why (void*)-1? */
-	if (freelist == (void *)-1)
+	if (brk == (void *)-1)
 		return false;
-	freelist->next = NULL;
-	freelist->prev = NULL;
-	freelist->size = max_bytes-METADATA_T_ALIGNED;
+
+    current = EXTEND_UNIT;
+    (*(size_t *)brk) = 1;
+    
+    freelist = (metadata_t *)(tmp + sizeof(size_t));
+    freelist ->next = NULL;
+    freelist -> prev = NULL;
+    SET_SIZE(freelist, EXTEND_UNIT - sizeof(size_t));
+    FREE(freelist);
+
+    
+    footer_t* t = (footer_t *)MOVE(freelist,EXTEND_UNIT-sizeof(footer_t));
+    SET_SIZE(t,GET_SIZE(freelist));
+    FREE(t);
 	return true;
 }
 

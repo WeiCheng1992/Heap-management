@@ -2,7 +2,7 @@
 #CC = g++
 CC = gcc
 EXECUTABLES = test_basic test_coalesce test_stress1 test_stress2
-CFLAGS = -I. -Wall -lm -DNDEBUG
+CFLAGS = -I. -Wall -lm -DEBUGFLAG
 #Disable the -DNDEBUG flag for the printing the freelist
 #CFLAGS = -Wall -I.
 PTFLAG = -O2
