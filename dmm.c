@@ -2,11 +2,12 @@
 #include <unistd.h> //needed for sbrk
 #include <assert.h> //For asserts
 #include "dmm.h"
-
+#include <string.h>
 /* You can improve the below metadata structure using the concepts from Bryant
  * and OHallaron book (chapter 9).
  */
 
+#define ARRAYSIZE (44) 
 
 #define IS_ALLOC(x)  (((x) -> size) & 1)
 #define GET_SIZE(x) (((x) -> size) & (~7))
@@ -44,14 +45,26 @@ typedef struct footer{
  * always sorted to improve the efficiency of coalescing 
  */
 
-static metadata_t* freelist = NULL;
+//static metadata_t* freelist = NULL;
 
+static metadata_t* freelist_arr[ARRAYSIZE];
 static size_t total_size = 0;
 
 static void* mbrk =NULL;
 
 static size_t current = 0;
 static bool is_init = false;
+
+int get_index(size_t size){
+    
+    int i =0;
+    while(size !=0){
+        size >>=1 ;
+        i++;
+    }
+    
+    return i;
+}
 
 void add_to_list(metadata_t * cur){
     if(cur == NULL)
@@ -62,30 +75,36 @@ void add_to_list(metadata_t * cur){
     SET_SIZE(t,GET_SIZE(cur));
     FREE(t);
     
-    if(freelist == NULL){
-        freelist = cur;
-        freelist -> prev = NULL;
-        freelist -> next = NULL;
+    int index = get_index(GET_SIZE(cur));
+    
+    if(freelist_arr[index] == NULL){
+        freelist_arr[index] = cur;
+        freelist_arr[index] -> prev = NULL;
+        freelist_arr[index] -> next = NULL;
     }else{
-        metadata_t * a = freelist;
-        freelist -> prev = cur;
-        freelist = cur ;
-        freelist -> next =a;
-        freelist -> prev = NULL;
+        metadata_t * a = freelist_arr[index];
+        freelist_arr[index] -> prev = cur;
+        freelist_arr[index] = cur ;
+        freelist_arr[index] -> next =a;
+        freelist_arr[index] -> prev = NULL;
     }
     
     
 }
+
+
 void delete_from_list(metadata_t * cur){
     if(cur == NULL)
         return;
+    
+    int index = get_index(GET_SIZE(cur));
         
     if(cur -> prev == NULL && cur-> next == NULL)
-        freelist = NULL;
+        freelist_arr[index] = NULL;
         
     else if(cur ->prev == NULL){
-        freelist = cur->next;
-        freelist ->prev = NULL;
+        freelist_arr[index] = cur->next;
+        freelist_arr[index] ->prev = NULL;
     }
     else if(cur -> next == NULL)
         cur->prev ->next =NULL;
@@ -144,21 +163,24 @@ void *find_fit(size_t size){
 
     if(size < MINSIZE - OVERHEAD )
         size = MINSIZE -OVERHEAD ;
-        
-    metadata_t* cur = freelist;
+    
+    int index = get_index(size+OVERHEAD);
+    
     void * ans = NULL;
-    long long unsigned min = 100000000000;
-    while(cur){
-        if(GET_SIZE(cur) >= size + OVERHEAD){
+    long long unsigned min = ~0;
+    while(ans ==NULL && index < ARRAYSIZE){
+        metadata_t* cur = freelist_arr[index];
+        while(cur){
             if(min > GET_SIZE(cur) - size){
                 ans = (void*)cur;
                 min = GET_SIZE(cur) - size;
             }
+            
+            cur = cur -> next;
         }
-        
-        cur = cur -> next;
+        index ++;
     }
-    printf("%d\n",min);
+    
     if(ans != NULL){
         delete_from_list((metadata_t*)ans);
         add_to_list(split((metadata_t*)ans,size + OVERHEAD));
@@ -192,6 +214,7 @@ void* dmalloc(size_t numbytes) {
 	
 	return ans;
 }
+
 metadata_t* coalescing(metadata_t* cur){
     footer_t* tail = (footer_t*)MOVE(cur,GET_SIZE(cur)-sizeof(footer_t));
     
@@ -262,6 +285,11 @@ bool dmalloc_init() {
     current = EXTEND_UNIT;
     (*(size_t *)mbrk) = 1;
     
+    memset(freelist_arr,0,sizeof(freelist_arr));
+    
+    
+    metadata_t *freelist =NULL;
+    
     freelist = (metadata_t *)(mbrk + sizeof(size_t));
     freelist ->next = NULL;
     freelist -> prev = NULL;
@@ -272,17 +300,22 @@ bool dmalloc_init() {
     footer_t* t = (footer_t *)MOVE(freelist,GET_SIZE(freelist)-sizeof(footer_t));
     SET_SIZE(t,GET_SIZE(freelist));
     FREE(t);
+    
+    freelist_arr[get_index(GET_SIZE(freelist))] = freelist;
 	return true;
 }
 
 /*Only for debugging purposes; can be turned off through -NDEBUG flag*/
 void print_freelist() {
-	metadata_t *freelist_head = freelist;
-	while(freelist_head != NULL) {
-		DEBUG("\tFreelist Size:%zd, Head:%p, Prev:%p, Next:%p\t",freelist_head->size,freelist_head,freelist_head->prev,freelist_head->next);
-		//printf("%d\n", freelist_head->size);
-		freelist_head = freelist_head->next;
+    int i=0;
+    for(i = 0;i < ARRAYSIZE;i++){
+	    metadata_t *freelist_head = freelist_arr[i];
+	    while(freelist_head != NULL) {
+		    DEBUG("\tindex:%d Freelist Size:%zd, Head:%p, Prev:%p, Next:%p\t",i,freelist_head->size,freelist_head,freelist_head->prev,freelist_head->next);
+		    //printf("%d\n", freelist_head->size);
+		    freelist_head = freelist_head->next;
 		
+	    }
+	    DEBUG("\n");
 	}
-	DEBUG("\n");
 }
