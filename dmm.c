@@ -56,7 +56,7 @@ static bool is_init = false;
 void add_to_list(metadata_t * cur){
     if(cur == NULL)
         return ;
-        
+     
     FREE(cur);    
     footer_t* t = (footer_t *)MOVE(cur,GET_SIZE(cur)-sizeof(footer_t));
     SET_SIZE(t,GET_SIZE(cur));
@@ -73,6 +73,8 @@ void add_to_list(metadata_t * cur){
         freelist -> next =a;
         freelist -> prev = NULL;
     }
+    
+    
 }
 void delete_from_list(metadata_t * cur){
     if(cur == NULL)
@@ -118,10 +120,11 @@ bool extend_memory(size_t size){
 }
 
 metadata_t* split(metadata_t * cur,size_t size){
-    if(cur == NULL || GET_SIZE(cur) <= MINSIZE +size )
+    if(cur == NULL || GET_SIZE(cur) < MINSIZE +size )
         return NULL;
         
     size_t second_size = GET_SIZE(cur) - size;
+    
     
     SET_SIZE(cur, size );
     footer_t* t = (footer_t*)MOVE(cur, GET_SIZE(cur) - sizeof(footer_t));   
@@ -136,7 +139,10 @@ metadata_t* split(metadata_t * cur,size_t size){
     return second;
 }
 
+// first fit
 void *find_fit(size_t size){
+    if(size < MINSIZE - OVERHEAD )
+        size = MINSIZE -OVERHEAD ;
     metadata_t* cur = freelist;
     void * ans = NULL;
     while(cur){
@@ -198,15 +204,14 @@ metadata_t* coalescing(metadata_t* cur){
     
     /*not last block*/
     if(mbrk + current != ((void*)tail) + sizeof(footer_t)){
-        //printf("jinlaile\n");
         metadata_t* next_head = (metadata_t*)MOVE(cur,GET_SIZE(cur));
         if(!IS_ALLOC(next_head)){
-            //printf("jinqule\n");
             size += GET_SIZE(next_head);
             delete_from_list(next_head);
             
         }
     }
+    
     SET_SIZE(ans,size);
     footer_t * t = (footer_t *)MOVE(ans,GET_SIZE(ans) - sizeof(footer_t));
     SET_SIZE(t,size);
