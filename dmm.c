@@ -141,27 +141,34 @@ metadata_t* split(metadata_t * cur,size_t size){
 
 // first fit
 void *find_fit(size_t size){
+
     if(size < MINSIZE - OVERHEAD )
         size = MINSIZE -OVERHEAD ;
+        
     metadata_t* cur = freelist;
     void * ans = NULL;
+    long long unsigned min = 100000000000;
     while(cur){
         if(GET_SIZE(cur) >= size + OVERHEAD){
-            
-            ans = (void *)cur;
-            delete_from_list(cur);
-            add_to_list(split(cur,size + OVERHEAD));
-            ALLOC(cur);
-            
-            
-            footer_t* t = (footer_t*)MOVE(cur, GET_SIZE(cur) - sizeof(footer_t));
-            ALLOC(t);
-            ans += sizeof(footer_t);
-            break;
+            if(min > GET_SIZE(cur) - size){
+                ans = (void*)cur;
+                min = GET_SIZE(cur) - size;
+            }
         }
         
         cur = cur -> next;
     }
+    printf("%d\n",min);
+    if(ans != NULL){
+        delete_from_list((metadata_t*)ans);
+        add_to_list(split((metadata_t*)ans,size + OVERHEAD));
+        
+        ALLOC((metadata_t*)ans);
+        footer_t* t = (footer_t*)MOVE(ans, GET_SIZE((metadata_t*)ans) - sizeof(footer_t));
+        ALLOC(t);
+        ans += sizeof(footer_t);
+    }
+    
     return ans;
 }
 
